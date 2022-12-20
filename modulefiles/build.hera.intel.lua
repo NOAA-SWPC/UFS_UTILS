@@ -28,9 +28,6 @@ load(pathJoin("g2", g2_ver))
 ip_ver=os.getenv("ip_ver") or "3.3.3"
 load(pathJoin("ip", ip_ver))
 
-nemsio_ver=os.getenv("nemsio_ver") or "2.5.4"
-load(pathJoin("nemsio", nemsio_ver))
-
 sp_ver=os.getenv("sp_ver") or "2.3.3"
 load(pathJoin("sp", sp_ver))
 
@@ -43,6 +40,18 @@ load(pathJoin("sfcio", sfcio_ver))
 sigio_ver=os.getenv("sigio_ver") or "2.3.2"
 load(pathJoin("sigio", sigio_ver))
 
+landsfcutil_ver=os.getenv("landsfcutil_ver") or "2.4.1"
+load(pathJoin("landsfcutil", landsfcutil_ver))
+
+nemsiogfs_ver=os.getenv("nemsiogfs_ver") or "2.5.3"
+load(pathJoin("nemsiogfs", nemsiogfs_ver))
+
+nemsio_ver=os.getenv("nemsio_ver") or "2.5.2"
+load(pathJoin("nemsio", nemsio_ver))
+
+gfsio_ver=os.getenv("gfsio_ver") or "1.4.1"
+load(pathJoin("gfsio", gfsio_ver))
+
 zlib_ver=os.getenv("zlib_ver") or "1.2.11"
 load(pathJoin("zlib", zlib_ver))
 
@@ -52,16 +61,19 @@ load(pathJoin("libpng", png_ver))
 hdf5_ver=os.getenv("hdf5_ver") or "1.10.6"
 load(pathJoin("hdf5", hdf5_ver))
 
-netcdf_ver=os.getenv("netcdf_ver") or "4.7.4"
-load(pathJoin("netcdf", netcdf_ver))
-
-nccmp_ver=os.getenv("nccmp_ver") or "1.8.9.0"
-load(pathJoin("nccmp", nccmp_ver))
-
 esmf_ver=os.getenv("esmf_ver") or "8.2.1b04"
 load(pathJoin("esmf", esmf_ver))
 
 nco_ver=os.getenv("nco_ver") or "4.9.1"
 load(pathJoin("nco", nco_ver))
+
+netcdf_ver=os.getenv("netcdf_ver") or "4.7.0"
+load(pathJoin("netcdf", netcdf_ver))
+
+szip_ver=os.getenv("szip_ver") or "2.1"
+load(pathJoin("szip", szip_ver))
+
+nccmp_ver=os.getenv("nccmp_ver") or "1.8.9.0"
+load(pathJoin("nccmp", nccmp_ver))
 
 whatis("Description: UFS_UTILS build environment")

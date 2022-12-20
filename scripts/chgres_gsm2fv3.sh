@@ -1,5 +1,8 @@
 #!/bin/bash
 ####################################
+module use -a ../modulefiles
+module load build.hera.intel
+
 export TYPE=SIGIO
 
 export CASE=C48
