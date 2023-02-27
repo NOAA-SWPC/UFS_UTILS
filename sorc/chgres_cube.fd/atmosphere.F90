@@ -318,8 +318,10 @@
 
  call vintg
 
- if( wam_cold_start ) then 
-   call vintg_wam (cycle_year,cycle_mon,cycle_day,cycle_hour)
+ if( wam_cold_start ) then
+    if (lev_input.lt.149) then
+      call vintg_wam (cycle_year,cycle_mon,cycle_day,cycle_hour)
+    endif
  endif
 
 !-----------------------------------------------------------------------------------
@@ -512,7 +514,7 @@
  allocate(tracers_target_grid(num_tracers))
 
  do n = 1, num_tracers
-    print*,"- CALL FieldCreate FOR TARGET GRID TRACERS ", trim(tracers(n))    
+    print*,"- CALL FieldCreate FOR TARGET GRID tracers ", trim(tracers(n))    
     tracers_target_grid(n) = ESMF_FieldCreate(target_grid, &
                                    typekind=ESMF_TYPEKIND_R8, &
                                    staggerloc=ESMF_STAGGERLOC_CENTER, &
@@ -807,7 +809,7 @@
  real(esmf_kind_r8), allocatable :: pi(:,:,:)
                 
  print*,"COMPUTE 3-D PRESSURE FROM ADJUSTED SURFACE PRESSURE."
-
+ ! for WAM idvc = 3, but vcoord(:,3)=0.0
  idvc = 2 ! hard wire for now.
  idsl = 2 ! hard wire for now.
 
@@ -2140,14 +2142,14 @@
 
    zhptr(i,j,1) = zhsfcptr(i,j)
 
-   do k = 2, levp1_target
-     zhptr(i,j,k) = zhptr(i,j,k-1)+tptr(i,j,k-1)*(1.+zvir*qptr(i,j,k-1))*     &
+   do k = 2, levp1_target  
+     zhptr(i,j,k) = zhptr(i,j,k-1)+tptr(i,j,k-1)*(1.+zvir*qptr(i,j,k-1))*         &
               (pn0(k-1)-pn0(k))/grd
    enddo
 
  enddo
  enddo
-
+ print *,'zhptr',minval(zhptr),maxval(zhptr)
  deallocate(pe0, pn0)
 
  end subroutine compute_zh 
