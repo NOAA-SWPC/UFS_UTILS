@@ -8005,7 +8005,6 @@ SUBROUTINE DINT2P(PPIN,XXIN,NPIN,PPOUT,XXOUT,NPOUT   &
         integer                               :: clb(3), cub(3)                                          
         real,allocatable                      :: psx(:,:), psy(:,:) 
         real,allocatable                      :: pi(:,:,:), dpidps(:,:,:)
-        ! real,allocatable                      :: os(:,:) 
         real,allocatable                      :: w(:,:,:)    
     
         real                                  :: vgradp,os
@@ -8026,13 +8025,6 @@ SUBROUTINE DINT2P(PPIN,XXIN,NPIN,PPOUT,XXOUT,NPOUT   &
                     farrayPtr=vptr, rc=rc)
   if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
     call error_handler("IN FieldGet", rc)
-
-  ! if (localpet == 0) print*,"- CALL FieldGet DZDT."
-  ! nullify(wptr) 
-  ! call ESMF_FieldGet(dzdt_input_grid, &
-  !                   farrayPtr=wptr, rc=rc)
-  ! if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
-  !   call error_handler("IN FieldGet", rc)
 
   if (localpet == 0) print*,"- CALL FieldGet FOR SURFACE PRESSURE."
   nullify(psptr)
@@ -8096,8 +8088,6 @@ SUBROUTINE DINT2P(PPIN,XXIN,NPIN,PPOUT,XXOUT,NPOUT   &
   allocate(dpidps(clb(1):cub(1),clb(2):cub(2),1:levp1_input))
   allocate(w(clb(1):cub(1),clb(2):cub(2),1:lev_input))
 
-  ! allocate(os(clb(1):cub(1),clb(2):cub(2)))
-
   select case(mod(idvm,10)) 
   case(0,1) 
       continue 
@@ -8120,8 +8110,7 @@ SUBROUTINE DINT2P(PPIN,XXIN,NPIN,PPOUT,XXOUT,NPOUT   &
   enddo
 !$OMP END PARALLEL DO
   end select 
-  ! print *,'clb,cub',clb(1),clb(2),clb(3),cub(1),cub(2),cub(3)
-  !clb,cub           1       1       1    192       6   150
+ 
 !$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(i,j) 
     do i = clb(1), cub(1)
       do j = clb(2), cub(2)
