@@ -1,4 +1,4 @@
-#!/bin/bash
+ #!/bin/bash
 
 #---------------------------------------------------------------------
 # Driver script for running on Hera.
@@ -7,7 +7,7 @@
 #---------------------------------------------------------------------
 
 set -x
-
+ulimit -s unlimited
 compiler=${compiler:-"intel"}
 source ../../sorc/machine-setup.sh > /dev/null 2>&1
 module use ../../modulefiles
@@ -19,9 +19,8 @@ module use -a /scratch2/NCEPDEV/nwprod/NCEPLIBS/modulefiles
 module load prod_util/1.1.0
 
 PROJECT_CODE=fv3-cpu
-QUEUE=batch
-
-source config
+QUEUE=debug
+source config_wam
 
 if [ $EXTRACT_DATA == yes ]; then
 
@@ -108,6 +107,9 @@ if [ $EXTRACT_DATA == yes ]; then
         DEPEND="-d afterok:$DATAH:$DATA1:$DATA2:$DATA3:$DATA4:$DATA5:$DATA6:$DATA7:$DATA8"
       fi
       ;;
+    wam)
+      echo "TTBD"
+    ;;
  esac
 
 else  # do not extract data.
@@ -161,6 +163,10 @@ if [ $RUN_CHGRES == yes ]; then
     v16)
       sbatch --parsable --ntasks-per-node=6 --nodes=${NODES} -t $WALLT -A $PROJECT_CODE -q $QUEUE -J chgres_${CDUMP} \
       -o log.${CDUMP} -e log.${CDUMP} ${DEPEND} run_v16.chgres.sh ${CDUMP}
+      ;;
+    wam)
+       sbatch --parsable --ntasks-per-node=6 --nodes=${NODES} -t $WALLT -A $PROJECT_CODE -q $QUEUE -J chgres_${CDUMP} \
+      -o log.${CDUMP}.$$.txt -e log.${CDUMP}.$$.txt ${DEPEND} run_wam.chgres.sh ${CDUMP}
       ;;
   esac
 

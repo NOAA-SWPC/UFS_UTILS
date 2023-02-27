@@ -319,7 +319,9 @@
  call vintg
 
  if( wam_cold_start ) then 
+    if (lev_input.lt.149) then
    call vintg_wam (cycle_year,cycle_mon,cycle_day,cycle_hour)
+ endif
  endif
 
 !-----------------------------------------------------------------------------------
@@ -807,7 +809,7 @@
  real(esmf_kind_r8), allocatable :: pi(:,:,:)
                 
  print*,"COMPUTE 3-D PRESSURE FROM ADJUSTED SURFACE PRESSURE."
-
+ ! for WAM idvc = 3, but vcoord(:,3)=0.0
  idvc = 2 ! hard wire for now.
  idsl = 2 ! hard wire for now.
 
@@ -2147,7 +2149,7 @@
 
  enddo
  enddo
-
+ print *,'zhptr',minval(zhptr),maxval(zhptr)
  deallocate(pe0, pn0)
 
  end subroutine compute_zh 

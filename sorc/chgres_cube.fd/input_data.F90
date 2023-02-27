@@ -103,6 +103,15 @@
                                         !! for 7 layers of soil for the RUC LSM
  
  character(len=50), private, allocatable :: slevs(:) !< The atmospheric levels in the GRIB2 input file.
+ !---WAM
+ real(esmf_kind_r8), allocatable, public :: ri(:),cpi(:) !R & cp for multi gases
+ type(esmf_field)                        :: psx_input_grid ! ps gradient
+ type(esmf_field)                        :: psy_input_grid
+ type(esmf_field)                        :: div_input_grid ! divergence
+ type(esmf_field)                        :: pm_input_grid ! for diag omega
+ type(esmf_field)                        :: pd_input_grid ! for diag omega
+ type(esmf_field)                        :: dpm_input_grid ! for diag omega
+ type(esmf_field)                        :: dpd_input_grid ! for diag omega
 
 ! Fields associated with the nst model.
 
@@ -138,6 +147,7 @@
  public :: convert_winds
  public :: init_sfc_esmf_fields
  public :: dint2p
+ public :: get_omega
  
  contains
 
@@ -531,7 +541,69 @@
     call error_handler("IN FieldCreate", rc)
  
  end subroutine init_atm_esmf_fields
+!--diag omega field init
+ subroutine init_atm_omega_esmf_fields
+  implicit none
+  integer                                  ::  rc
+  print*,"- CALL FieldCreate FOR INPUT GRID SURFACE PRESSURE GRADIENT."
+  psx_input_grid = ESMF_FieldCreate(input_grid, &
+                                   typekind=ESMF_TYPEKIND_R8, &
+                                   staggerloc=ESMF_STAGGERLOC_CENTER, rc=rc)
+  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+     call error_handler("IN FieldCreate", rc)
+  psy_input_grid = ESMF_FieldCreate(input_grid, &
+                                   typekind=ESMF_TYPEKIND_R8, &
+                                   staggerloc=ESMF_STAGGERLOC_CENTER, rc=rc)
+  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+     call error_handler("IN FieldCreate", rc)
 
+  print*,"- CALL FieldCreate FOR INPUT GRID DIVERGENCE."
+  div_input_grid = ESMF_FieldCreate(input_grid, &
+                                   typekind=ESMF_TYPEKIND_R8, &
+                                   staggerloc=ESMF_STAGGERLOC_CENTER, &
+                                   ungriddedLBound=(/1/), &
+                                   ungriddedUBound=(/lev_input/), rc=rc) 
+  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+     call error_handler("IN FieldCreate", rc)
+
+  print*,"- CALL FieldCreate FOR INPUT PM."
+  pm_input_grid = ESMF_FieldCreate(input_grid, &
+                                  typekind=ESMF_TYPEKIND_R8, &
+                                  staggerloc=ESMF_STAGGERLOC_CENTER, &
+                                  ungriddedLBound=(/1/), &
+                                  ungriddedUBound=(/lev_input/), rc=rc) 
+  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+    call error_handler("IN FieldCreate", rc)
+
+  print*,"- CALL FieldCreate FOR INPUT PD."
+  pd_input_grid = ESMF_FieldCreate(input_grid, &
+                                  typekind=ESMF_TYPEKIND_R8, &
+                                  staggerloc=ESMF_STAGGERLOC_CENTER, &
+                                  ungriddedLBound=(/1/), &
+                                  ungriddedUBound=(/lev_input/), rc=rc) 
+  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+    call error_handler("IN FieldCreate", rc)
+  
+  print*,"- CALL FieldCreate FOR INPUT PM."
+  dpm_input_grid = ESMF_FieldCreate(input_grid, &
+                                  typekind=ESMF_TYPEKIND_R8, &
+                                  staggerloc=ESMF_STAGGERLOC_CENTER, &
+                                  ungriddedLBound=(/1/), &
+                                  ungriddedUBound=(/lev_input/), rc=rc) 
+  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+    call error_handler("IN FieldCreate", rc)
+
+  print*,"- CALL FieldCreate FOR INPUT PM."
+  dpd_input_grid = ESMF_FieldCreate(input_grid, &
+                                  typekind=ESMF_TYPEKIND_R8, &
+                                  staggerloc=ESMF_STAGGERLOC_CENTER, &
+                                  ungriddedLBound=(/1/), &
+                                  ungriddedUBound=(/lev_input/), rc=rc) 
+  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+    call error_handler("IN FieldCreate", rc)
+
+ end subroutine init_atm_omega_esmf_fields
+!---
 !> Create surface input grid esmf fields
 !!
 !! @author George Gayno NCEP/EMC 
@@ -746,7 +818,7 @@
  subroutine read_input_atm_gfs_sigio_file(localpet)
 
  use sigio_module
-
+ use mpi
  implicit none
 
  integer, intent(in)                   :: localpet
@@ -767,6 +839,16 @@
  type(sigio_head)                      :: sighead
  type(sigio_dbta)                      :: sigdata
 
+ !WAM
+ real(esmf_kind_r8)                    :: cp0= 1039.6 !?? N2
+ real(esmf_kind_r8)                    :: psmean
+ integer                               :: thermodyn_id
+ integer                               :: nvcoord
+ real, allocatable                     :: vcoord(:,:)
+ real(esmf_kind_r8), allocatable       :: dummy2d2(:,:)
+ real(esmf_kind_r8), allocatable       :: dummy(:,:,:),dummy3d_dpd(:,:,:),dummy3d_dpm(:,:,:)
+ real(esmf_kind_r8), pointer           :: tptr(:,:,:), qptr(:,:,:), wptr(:,:,:)
+ integer:: im,idvc,idsl,idvm
  the_file = trim(data_dir_input_grid) // "/" // trim(atm_files_input_grid(1))
 
  print*,"- ATMOSPHERIC DATA IN SIGIO FORMAT."
@@ -786,6 +868,25 @@
  lev_input = sighead%levs
  levp1_input = lev_input + 1
 
+ nvcoord = sighead%nvcoord 
+ allocate(vcoord(levp1_input,nvcoord))  
+ vcoord = sighead%vcoord
+ idvc = sighead%idvc
+ idsl = sighead%idsl
+ idvm = sighead%idvm
+ im = i_input*j_input
+ !---WAM
+ thermodyn_id = mod(idvm/10,10)
+ allocate(ri(0:sighead%ntrac))
+ allocate(cpi(0:sighead%ntrac))
+  
+ if (thermodyn_id == 3) then  
+   ri = sighead%ri
+   cpi = sighead%cpi
+ else
+   ri = 0.0
+   cpi = 0.0
+ endif
  if (num_tracers_input /= sighead%ntrac) then
    call error_handler("WRONG NUMBER OF TRACERS EXPECTED.", 99)
  endif
@@ -796,6 +897,14 @@
        trim(tracers_input(3)) /= 'clwmr') then 
      call error_handler("TRACERS SELECTED DO NOT MATCH FILE CONTENTS.", 99)
    endif
+  elseif(sighead%idvt == 200) then  ! WAM 'spfh,,o3mr,clwmr,o,o2'
+    if (trim(tracers_input(1)) /= 'spfh'  .or.  &
+      trim(tracers_input(2)) /= 'o3mr'   .or.  &
+      trim(tracers_input(3)) /= 'clwmr'    .or.  &
+      trim(tracers_input(4)) /= 'omr'       .or.  &
+      trim(tracers_input(5)) /= 'o2mr') then
+      call error_handler("TRACERS SELECTED DO NOT MATCH FILE CONTENTS.", 99)
+    end if
  else
    print*,'- UNRECOGNIZED IDVT: ', sighead%idvt
    call error_handler("UNRECOGNIZED IDVT", 99)
@@ -807,14 +916,24 @@
 
  call init_atm_esmf_fields
 
+ call init_atm_omega_esmf_fields
+
  if (localpet == 0) then
    allocate(dummy2d(i_input,j_input))
+   allocate(dummy2d2(i_input,j_input))
+   allocate(dummy(i_input,j_input,lev_input))
    allocate(dummy3d(i_input,j_input,lev_input))
    allocate(dummy3d2(i_input,j_input,lev_input))
+   allocate(dummy3d_dpd(i_input,j_input,lev_input))
+   allocate(dummy3d_dpm(i_input,j_input,lev_input))
  else
    allocate(dummy2d(0,0))
+   allocate(dummy2d2(0,0))
+   allocate(dummy(0,0,0))
    allocate(dummy3d(0,0,0))
    allocate(dummy3d2(0,0,0))
+   allocate(dummy3d_dpd(0,0,0))
+   allocate(dummy3d_dpm(0,0,0))
  endif
 
  if (localpet == 0) then
@@ -829,11 +948,19 @@
      call error_handler("READING SIGDATA.", rc)
    endif
    call sptez(0,sighead%jcap,4,i_input, j_input, sigdata%ps, dummy2d, 1)
+   select case(mod(idvm,10)) 
+   case(0,1)
    dummy2d = exp(dummy2d) * 1000.0
+   case(2)
+     dummy2d = dummy2d* 1000.0
+   case default
+     print *,' default selected: psi is p in pascal '
+   end select
+  !  dummy2d = exp(dummy2d) * 1000.0
    print*,'surface pres ',maxval(dummy2d),minval(dummy2d)
- endif
+ endif ! localpet == 0
 
- print*,"- CALL FieldScatter FOR SURFACE PRESSURE."
+ if (localpet == 0) print*,"- CALL FieldScatter FOR SURFACE PRESSURE."
  call ESMF_FieldScatter(ps_input_grid, dummy2d, rootpet=0, rc=rc)
  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
     call error_handler("IN FieldScatter", rc)
@@ -843,19 +970,34 @@
    print*,'terrain ',maxval(dummy2d),minval(dummy2d)
  endif
 
- print*,"- CALL FieldScatter FOR TERRAIN."
+ if (localpet == 0) print*,"- CALL FieldScatter FOR TERRAIN."
  call ESMF_FieldScatter(terrain_input_grid, dummy2d, rootpet=0, rc=rc)
  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
     call error_handler("IN FieldScatter", rc)
-
+    if (localpet == 0) then
+      if (thermodyn_id == 3) then
+        dummy3d2 = 0.0 !sumq
+        dummy = 0.0 !xcp
+      endif
+    endif
  do k = 1, num_tracers_input
 
    if (localpet == 0) then
      call sptezm(0,sighead%jcap,4,i_input, j_input, lev_input, sigdata%q(:,:,k), dummy3d, 1)
      print*,trim(tracers_input(k)),maxval(dummy3d),minval(dummy3d)
+     if (thermodyn_id == 3)  then
+       if( cpi(k) .ne. 0.0 .and. ri(k) .ne. 0.0) then
+          dummy = dummy + cpi(k)*dummy3d !xcp
+          dummy3d2 = dummy3d2 + dummy3d !sumq
+   endif
+      else
+        if (k == 1) then
+          dummy =  (1.+(461.50/287.05-1)*dummy3d) !virt
+        endif
+     endif
    endif
 
-   print*,"- CALL FieldScatter FOR INPUT ", trim(tracers_input(k))
+   if (localpet == 0) print*,"- CALL FieldScatter FOR INPUT ", trim(tracers_input(k))
    call ESMF_FieldScatter(tracers_input_grid(k), dummy3d, rootpet=0, rc=rc)
    if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
       call error_handler("IN FieldScatter", rc)
@@ -864,16 +1006,30 @@
 
  if (localpet == 0) then
    call sptezm(0,sighead%jcap,4,i_input, j_input, lev_input, sigdata%t, dummy3d, 1)
+   print *,"-: WAM ENTHAPHY==>TEMPERATURE"
+   select case( thermodyn_id )
+    case(0,1)
+      dummy3d = dummy3d/dummy
+    case(2)
+    case(3)
+        if (cpi(0) == 0) then
+          dummy3d = dummy3d/cp0
+        else
+          dummy  = (1.-dummy3d2)*cpi(0)+dummy
+          dummy3d = dummy3d/dummy
+        endif
+    case default
+    end select 
    print*,'temp ',maxval(dummy3d),minval(dummy3d)
  endif
 
- print*,"- CALL FieldScatter FOR INPUT GRID TEMPERATURE."
+ if (localpet == 0) print*,"- CALL FieldScatter FOR INPUT GRID TEMPERATURE."
  call ESMF_FieldScatter(temp_input_grid, dummy3d, rootpet=0, rc=rc)
  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
      call error_handler("IN FieldScatter", rc)
 
 !---------------------------------------------------------------------------
-! The spectral gfs files have omega, not vertical velocity.  Set to
+! The spectral gfs files have omega?? not vertical velocity.  Set to
 ! zero for now.  Convert from omega to vv in the future?
 !---------------------------------------------------------------------------
 
@@ -882,7 +1038,7 @@
    dummy3d = 0.0
  endif
 
- print*,"- CALL FieldScatter FOR INPUT DZDT."
+ if (localpet == 0) print*,"- CALL FieldScatter FOR INPUT DZDT."
  call ESMF_FieldScatter(dzdt_input_grid, dummy3d, rootpet=0, rc=rc)
  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
     call error_handler("IN FieldScatter", rc)
@@ -893,22 +1049,102 @@
    print*,'v ',maxval(dummy3d2),minval(dummy3d2)
  endif
 
- print*,"- CALL FieldScatter FOR INPUT U-WIND."
+ if (localpet == 0) print*,"- CALL FieldScatter FOR INPUT U-WIND."
  call ESMF_FieldScatter(u_input_grid, dummy3d, rootpet=0, rc=rc)
  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
     call error_handler("IN FieldScatter", rc)
 
- print*,"- CALL FieldScatter FOR INPUT V-WIND."
+ if (localpet == 0) print*,"- CALL FieldScatter FOR INPUT V-WIND."
  call ESMF_FieldScatter(v_input_grid, dummy3d2, rootpet=0, rc=rc)
  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
     call error_handler("IN FieldScatter", rc)
+!---------------------------------------------------------------------------
+!   DIV-divergence here. idrt = 4 !GAUSSIAN GRID
+!---------------------------------------------------------------------------
+ if (localpet == 0) then
+   call sptezm(0,sighead%jcap,4,i_input, j_input, lev_input, sigdata%d, dummy3d, 1)
+   print*,'div ',maxval(dummy3d),minval(dummy3d)
+ endif
 
- deallocate(dummy2d, dummy3d, dummy3d2)
+ if (localpet == 0) print*,"- CALL FieldScatter FOR INPUT DIV."
+ call ESMF_FieldScatter(div_input_grid, dummy3d, rootpet=0, rc=rc)
+ if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+    call error_handler("IN FieldScatter", rc)
+!---------------------------------------------------------------------------
+!   ps gradient here. idrt = 4 !GAUSSIAN GRID
+!---------------------------------------------------------------------------
+ if (localpet == 0)  then
+   call sptezd(0,sighead%jcap,4,i_input,j_input,sigdata%ps,psmean,dummy2d,dummy2d2,1)
+   print *,'psx,psy',maxval(dummy2d),minval(dummy2d),maxval(dummy2d2),minval(dummy2d2)
+ endif
 
+ if (localpet == 0) print*,"- CALL FieldScatter FOR SURFACE PRESSURE GRADIENT-X."
+ call ESMF_FieldScatter(psx_input_grid, dummy2d, rootpet=0, rc=rc)
+ if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+    call error_handler("IN FieldScatter", rc)
+
+ if (localpet == 0) print*,"- CALL FieldScatter FOR SURFACE PRESSURE GRADIENT-Y."
+ call ESMF_FieldScatter(psy_input_grid, dummy2d2, rootpet=0, rc=rc)
+ if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+    call error_handler("IN FieldScatter", rc)
+ deallocate(dummy2d2)
  if (localpet == 0) call sigio_axdbta(sigdata, iret)
 
  call sigio_sclose(21, iret)
+!---------------------------------------------------------------------------
+!  OMEGA RELATED
+!---------------------------------------------------------------------------
+ if (localpet == 0) print*,"- CALL FieldGather TEMPERATURE." 
+ call ESMF_FieldGather(temp_input_grid,dummy,rootPet=0, tile=1, rc=rc)
+ if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+    call error_handler("IN FieldGether", rc) 
 
+ if (localpet == 0) print*,"- CALL FieldGather SURFACE PRESSURE." 
+ call ESMF_FieldGather(ps_input_grid,dummy2d,rootPet=0, tile=1, rc=rc)
+ if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+    call error_handler("IN FieldGether", rc) 
+
+ if (localpet==0) then
+   call sigio_modprd(im,im,lev_input,nvcoord,idvc,idsl,vcoord,iret,      &
+                    ps=dummy2d,t=dummy,pm=dummy3d,pd=dummy3d2,dpmdps=dummy3d_dpm,dpddps=dummy3d_dpd) 
+   print *,'modprd',minval(dummy3d),maxval(dummy3d)
+ endif
+
+ if (localpet == 0) print*,"- CALL FieldScatter MODPRD-PD."
+ call ESMF_FieldScatter(pd_input_grid, dummy3d2, rootpet=0, rc=rc)
+ if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+    call error_handler("IN FieldScatter", rc)
+
+ if (localpet == 0) print*,"- CALL FieldScatter MODPRD-PM."
+ call ESMF_FieldScatter(pm_input_grid, dummy3d, rootpet=0, rc=rc)
+ if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+    call error_handler("IN FieldScatter", rc)
+
+ if (localpet == 0) print*,"- CALL FieldScatter MODPRD-DPD."
+ call ESMF_FieldScatter(dpd_input_grid, dummy3d_dpd, rootpet=0, rc=rc)
+ if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+    call error_handler("IN FieldScatter", rc)
+
+ if (localpet == 0) print*,"- CALL FieldScatter MODPRD-DPM."
+ call ESMF_FieldScatter(dpm_input_grid, dummy3d_dpm, rootpet=0, rc=rc)
+ if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+    call error_handler("IN FieldScatter", rc)
+    
+ deallocate(dummy2d, dummy3d, dummy3d2)
+ deallocate(dummy,dummy3d_dpd, dummy3d_dpm)
+ deallocate(vcoord)
+
+!--- WAM GET OMEGA
+if (localpet == 0) print *,'GET OMEGA HERE'
+nullify(wptr)
+if (localpet == 0) print*,"- CALL FieldGet DZDT." 
+call ESMF_FieldGet(dzdt_input_grid, &
+                  farrayPtr=wptr, rc=rc)
+if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+  call error_handler("IN FieldGet", rc)
+call get_omega(wptr,idvm,localpet)
+print *,'OMEGA',minval(wptr),maxval(wptr)
+call cleanup_input_atm_omega_data
 !---------------------------------------------------------------------------
 ! Convert from 2-d to 3-d component winds.
 !---------------------------------------------------------------------------
@@ -975,6 +1211,19 @@
    print*,'pres ',psptr(clb(1),clb(2)),pptr(clb(1),clb(2),:)
  endif
 
+ nullify(tptr)
+ if (localpet == 0) print*,"- CALL FieldGet TEMPERATURE."  
+ call ESMF_FieldGet(temp_input_grid, &
+                   farrayPtr=tptr, rc=rc)
+ if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+   call error_handler("IN FieldGet", rc) 
+
+ if (localpet == 0)  print*,"- CONVERT FROM OMEGA TO DZDT."
+ nullify(qptr)  
+ call ESMF_FieldGet(tracers_input_grid(1), &
+                  farrayPtr=qptr, rc=rc)
+ if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+  call error_handler("IN FieldGet", rc)
  end subroutine read_input_atm_gfs_sigio_file
 
 !> Read input atmospheric data from spectral gfs (global gaussian in
@@ -7330,6 +7579,23 @@ end subroutine handle_grib_error
  deallocate(tracers_input_grid)
 
  end subroutine cleanup_input_atm_data
+!> WAM-OMEGA related fields
+!! 
+ subroutine cleanup_input_atm_omega_data
+  implicit none
+
+  integer                         :: rc
+  print*,'- DESTROY OMEGA RELATED INPUT DATA.'
+
+  call ESMF_FieldDestroy(psx_input_grid, rc=rc)
+  call ESMF_FieldDestroy(psy_input_grid, rc=rc)
+  call ESMF_FieldDestroy(div_input_grid, rc=rc)
+  call ESMF_FieldDestroy(pm_input_grid, rc=rc)
+  call ESMF_FieldDestroy(pd_input_grid, rc=rc)
+  call ESMF_FieldDestroy(dpd_input_grid, rc=rc)
+  call ESMF_FieldDestroy(dpm_input_grid, rc=rc)
+ end subroutine cleanup_input_atm_omega_data
+
 
 !> Free up memory associated with nst data.
 !!
@@ -7726,5 +7992,151 @@ SUBROUTINE DINT2P(PPIN,XXIN,NPIN,PPOUT,XXOUT,NPOUT   &
       RETURN
       END SUBROUTINE DINT2P
 
+      subroutine get_omega(wptr,idvm,localpet)
+        use mpi
+        implicit none
+
+        integer,intent(in)                    :: idvm,localpet
+        real(esmf_kind_r8), pointer           :: wptr(:,:,:) 
+        real(esmf_kind_r8), pointer           :: psptr(:,:), psxptr(:,:), psyptr(:,:),   &
+                                                 uptr(:,:,:), vptr(:,:,:), div(:,:,:) 
+        real(esmf_kind_r8), pointer           :: pd(:,:,:),pm(:,:,:),                    &
+                                                 dpmdps(:,:,:),dpddps(:,:,:)                                         
+        integer                               :: clb(3), cub(3)                                          
+        real,allocatable                      :: psx(:,:), psy(:,:) 
+        real,allocatable                      :: pi(:,:,:), dpidps(:,:,:)
+        real,allocatable                      :: w(:,:,:)    
+    
+        real                                  :: vgradp,os
+        integer                               :: i, j , k, rc, iret
+
+  if (localpet == 0) print*,"- CALL FieldGet FOR U-WIND"
+  nullify(uptr)
+  call ESMF_FieldGet(u_input_grid, &
+                    computationalLBound=clb, &
+                    computationalUBound=cub, &
+                    farrayPtr=uptr, rc=rc)
+  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+    call error_handler("IN FieldGet", rc)
+  
+  if (localpet == 0) print*,"- CALL FieldGet FOR V-WIND"
+  nullify(vptr)
+  call ESMF_FieldGet(v_input_grid, &
+                    farrayPtr=vptr, rc=rc)
+  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+    call error_handler("IN FieldGet", rc)
+
+  if (localpet == 0) print*,"- CALL FieldGet FOR SURFACE PRESSURE."
+  nullify(psptr)
+  call ESMF_FieldGet(ps_input_grid, &
+                      farrayPtr=psptr, rc=rc)
+  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+      call error_handler("IN FieldGet", rc)    
+
+  if (localpet == 0) print*,"- CALL FieldGet FOR PS GRADIENT-X"
+  nullify(psxptr)
+  call ESMF_FieldGet(psx_input_grid, &
+                    farrayPtr=psxptr, rc=rc)
+  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+    call error_handler("IN FieldGet", rc)
+
+  if (localpet == 0) print*,"- CALL FieldGet FOR PS GRADIENT-Y"
+  nullify(psyptr)
+  call ESMF_FieldGet(psy_input_grid, &
+                    farrayPtr=psyptr, rc=rc)
+  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+    call error_handler("IN FieldGet", rc)
+
+  if (localpet == 0) print*,"- CALL FieldGet FOR DIV"
+  nullify(div)
+  call ESMF_FieldGet(div_input_grid, &
+                    farrayPtr=div, rc=rc)
+  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+  call error_handler("IN FieldGet", rc)
+
+  if (localpet == 0) print*,"- CALL FieldGet FOR MODPRD-PM"
+  nullify(pm)
+  call ESMF_FieldGet(pm_input_grid, &
+                    farrayPtr=pm, rc=rc)
+  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+  call error_handler("IN FieldGet", rc)
+
+  if (localpet == 0) print*,"- CALL FieldGet FOR MODPRD-PD"
+  nullify(pd)
+  call ESMF_FieldGet(pd_input_grid, &
+                    farrayPtr=pd, rc=rc)
+  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+  call error_handler("IN FieldGet", rc)
+
+  if (localpet == 0) print*,"- CALL FieldGet FOR MODPRD-DPD"
+  nullify(dpddps)
+  call ESMF_FieldGet(dpd_input_grid, &
+                    farrayPtr=dpddps, rc=rc)
+  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+  call error_handler("IN FieldGet", rc)
+
+  if (localpet == 0) print*,"- CALL FieldGet FOR MODPRD-DPM"
+  nullify(dpmdps)
+  call ESMF_FieldGet(dpm_input_grid, &
+                    farrayPtr=dpmdps, rc=rc)
+  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
+  call error_handler("IN FieldGet", rc)
+
+  allocate(psx(clb(1):cub(1),clb(2):cub(2)))
+  allocate(psy(clb(1):cub(1),clb(2):cub(2)))
+  allocate(pi(clb(1):cub(1),clb(2):cub(2),1:levp1_input))
+  allocate(dpidps(clb(1):cub(1),clb(2):cub(2),1:levp1_input))
+  allocate(w(clb(1):cub(1),clb(2):cub(2),1:lev_input))
+
+  select case(mod(idvm,10)) 
+  case(0,1) 
+      continue 
+  case(2)
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(i,j) 
+  do i = clb(1), cub(1)
+    do j = clb(2), cub(2)
+        psx(i,j) = psxptr(i,j)/(psptr(i,j)*1.0e-3) 
+        psy(i,j) = psyptr(i,j)/(psptr(i,j)*1.0e-3)
+    enddo
+  enddo
+!$OMP END PARALLEL DO                                                   
+  case default
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(i,j) 
+  do i = clb(1), cub(1)
+    do j = clb(2), cub(2) 
+        psx(i,j) = psxptr(i,j)/psptr(i,j)
+        psy(i,j) = psxptr(i,j)/psptr(i,j)
+    enddo
+  enddo
+!$OMP END PARALLEL DO
+  end select 
+ 
+!$OMP PARALLEL DO DEFAULT(SHARED) PRIVATE(i,j) 
+    do i = clb(1), cub(1)
+      do j = clb(2), cub(2)
+        pi(i,j,1) = psptr(i,j) 
+        dpidps(i,j,1) = 1. 
+        do k = 1,lev_input
+          pi(i,j,k+1) = pi(i,j,k)-pd(i,j,k) 
+          dpidps(i,j,k+1) = dpidps(i,j,k)-dpddps(i,j,k)
+        enddo
+        os = 0.0 
+        do k = lev_input, 1, -1
+          vgradp = uptr(i,j,k)*psx(i,j)+vptr(i,j,k)*psy(i,j) 
+          os = os-vgradp*psptr(i,j)*(dpmdps(i,j,k)-dpidps(i,j,k+1))-                &
+               div(i,j,k)*(pm(i,j,k)-pi(i,j,k+1))                                  
+          w(i,j,k) = vgradp*psptr(i,j)*dpmdps(i,j,k)+os
+          os = os-vgradp*psptr(i,j)*(dpidps(i,j,k)-dpmdps(i,j,k))-                  &
+               div(i,j,k)*(pi(i,j,k)-pm(i,j,k)) 
+          wptr(i,j,k) = w(i,j,k)                   
+        enddo
+      enddo
+    enddo
+!$OMP END PARALLEL DO
+    deallocate(psx,psy)
+    deallocate(pi,dpidps)
+    deallocate(w)
+
+    end subroutine get_omega
 
  end module input_data
