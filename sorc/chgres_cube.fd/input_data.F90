@@ -113,6 +113,8 @@
  type(esmf_field)                        :: dpm_input_grid ! for diag omega
  type(esmf_field)                        :: dpd_input_grid ! for diag omega
 
+! Fields associated with the nst model.
+
  type(esmf_field), public :: c_d_input_grid   !< Coefficient 2 to calculate d(tz)/d(ts)
  type(esmf_field), public :: c_0_input_grid   !< Coefficient 1 to calculate d(tz)/d(ts)
  type(esmf_field), public :: d_conv_input_grid   !< Thickness of free convection layer
@@ -554,7 +556,7 @@
                                    staggerloc=ESMF_STAGGERLOC_CENTER, rc=rc)
   if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
      call error_handler("IN FieldCreate", rc)
-  
+
   print*,"- CALL FieldCreate FOR INPUT GRID DIVERGENCE."
   div_input_grid = ESMF_FieldCreate(input_grid, &
                                    typekind=ESMF_TYPEKIND_R8, &
@@ -814,7 +816,7 @@
 !! @param[in] localpet  ESMF local persistent execution thread 
 !! @author George Gayno NCEP/EMC   
  subroutine read_input_atm_gfs_sigio_file(localpet)
- use grib2_util, only                   : convert_omega
+
  use sigio_module
  use mpi
  implicit none
@@ -833,6 +835,7 @@
  real(esmf_kind_r8), allocatable       :: dummy3d2(:,:,:)
  real(esmf_kind_r8), pointer           :: pptr(:,:,:), psptr(:,:)
  real(esmf_kind_r8), allocatable       :: pi(:,:,:)
+
  type(sigio_head)                      :: sighead
  type(sigio_dbta)                      :: sigdata
 
@@ -906,6 +909,7 @@
    print*,'- UNRECOGNIZED IDVT: ', sighead%idvt
    call error_handler("UNRECOGNIZED IDVT", 99)
  endif
+
 !---------------------------------------------------------------------------
 ! Initialize esmf atmospheric fields.
 !---------------------------------------------------------------------------
@@ -914,7 +918,7 @@
 
  call init_atm_omega_esmf_fields
 
-if (localpet == 0) then
+ if (localpet == 0) then
    allocate(dummy2d(i_input,j_input))
    allocate(dummy2d2(i_input,j_input))
    allocate(dummy(i_input,j_input,lev_input))
@@ -946,7 +950,7 @@ if (localpet == 0) then
    call sptez(0,sighead%jcap,4,i_input, j_input, sigdata%ps, dummy2d, 1)
    select case(mod(idvm,10)) 
    case(0,1)
-     dummy2d = exp(dummy2d) * 1000.0
+   dummy2d = exp(dummy2d) * 1000.0
    case(2)
      dummy2d = dummy2d* 1000.0
    case default
@@ -970,7 +974,6 @@ if (localpet == 0) then
  call ESMF_FieldScatter(terrain_input_grid, dummy2d, rootpet=0, rc=rc)
  if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
     call error_handler("IN FieldScatter", rc)
-! --- test
     if (localpet == 0) then
       if (thermodyn_id == 3) then
         dummy3d2 = 0.0 !sumq
@@ -986,7 +989,7 @@ if (localpet == 0) then
        if( cpi(k) .ne. 0.0 .and. ri(k) .ne. 0.0) then
           dummy = dummy + cpi(k)*dummy3d !xcp
           dummy3d2 = dummy3d2 + dummy3d !sumq
-       endif
+   endif
       else
         if (k == 1) then
           dummy =  (1.+(461.50/287.05-1)*dummy3d) !virt
@@ -998,6 +1001,7 @@ if (localpet == 0) then
    call ESMF_FieldScatter(tracers_input_grid(k), dummy3d, rootpet=0, rc=rc)
    if(ESMF_logFoundError(rcToCheck=rc,msg=ESMF_LOGERR_PASSTHRU,line=__LINE__,file=__FILE__)) &
       call error_handler("IN FieldScatter", rc)
+
  enddo
 
  if (localpet == 0) then
@@ -1042,7 +1046,7 @@ if (localpet == 0) then
  if (localpet == 0) then
    call sptezmv(0, sighead%jcap, 4, i_input, j_input, lev_input, sigdata%d, sigdata%z, dummy3d, dummy3d2, 1)
    print*,'u ',maxval(dummy3d),minval(dummy3d)
-   print*,'v ',maxval(dummy3d2),minval(dummy3d2)  
+   print*,'v ',maxval(dummy3d2),minval(dummy3d2)
  endif
 
  if (localpet == 0) print*,"- CALL FieldScatter FOR INPUT U-WIND."
@@ -1202,8 +1206,9 @@ call cleanup_input_atm_omega_data
  enddo
 
  deallocate(pi)
+
  if (localpet == 0) then
-  print*,'pres ',psptr(clb(1),clb(2)),pptr(clb(1),clb(2),:)
+   print*,'pres ',psptr(clb(1),clb(2)),pptr(clb(1),clb(2),:)
  endif
 
  nullify(tptr)
@@ -7986,7 +7991,7 @@ SUBROUTINE DINT2P(PPIN,XXIN,NPIN,PPOUT,XXOUT,NPOUT   &
 
       RETURN
       END SUBROUTINE DINT2P
-      
+
       subroutine get_omega(wptr,idvm,localpet)
         use mpi
         implicit none
